@@ -1,0 +1,592 @@
+---
+title: 'CSCI E-63C: Final Exam'
+author: "Amy Wen"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(gridExtra)
+library(randomForest)
+library(MASS)
+library(car)
+library(e1071)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Problem 1: univariate and unsupervised analysis (20 points)
+
+Download and read training and test data into R and prepare graphical and numerical summaries of it: e.g. histograms of continuous attributes, contingency tables of categorical variables, scatterplots of continuous attributes with some of the categorical variables indicated by color/symbol shape, etc.  Whatever you find helpful to think about properties of the data you are about to start using for fitting classification models.
+
+<span style="color:blue">Taking a quick look at the data, we see from a table of the outcome "noyes" that there are approximately 3 times more no's as yes's. For the predictors, there are 6 continous, 1 dummy, and 9 categorical variables.</span>
+
+<span style="color:blue">Histograms of the 6 continuous attributes are shown below for the two datasets, and the distributions look fairly similar for the training and test datasets. The majority of the variables appear right skewed, except for vuu which appears left skewed.</span>
+
+<span style="color:blue">To get a general sense of the data, some pairwise contingency tables of the outcome with the predictors were examined. Some interesting things we can see from the tables are that "cle" having a value of fxb and "kbc" having values of fw or hh are highly predictive of "noyes" being yes. There is a preference for "noyes" being no when "gb" is 0, "xxp" is ndk, and "rao" is e2. On the other hand "at" seems to be evenly distributed in a 3:1 ratio for no vs. yes for each of its categories.</span>
+
+<span style="color:blue">Scatterplots of the continuous attributes are shown below (for a subset of rows of data so that the points are easier to discern) and colored by some of the categorical variables as well as the outcome. It's difficult to see any obvious patterns in the bulk of the data, but there are some patterns that can be observed for the more extreme points. For example, "vuu" being 0 corresponds highly with "og" being kc and "noyes" being no, while high values of "ihj" and "ptj" correspond with "noyes" being yes.</span>
+
+```{r loadData}
+set.seed(121)
+# Load data
+trainData <- read.csv("final-data-train.csv") 
+testData <- read.csv("final-data-test.csv")
+
+# Examine data (commented out to save space)
+# str(trainData) # 16 predictors: 6 continous, 1 dummy, 9 categorical
+# str(testData)
+table(trainData$noyes)
+
+# Change dummy variable gb to factor
+trainData$gb = factor(trainData$gb)
+testData$gb = factor(testData$gb)
+
+# Combine the predictors of the two datasets for exploratory analysis
+combData = rbind(cbind(trainData[,-1], trainTest="Train"), cbind(testData, trainTest="Test"))
+
+# Continuous attributes
+contAtt = c("vuu", "mt", "zq", "zf", "ihj", "ptj")
+
+# Histograms of continuous attributes
+plots <- lapply(contAtt, function(i) { ggplot(combData, aes(x=get(i), fill=trainTest)) +
+    xlab(i) +
+    ggtitle(paste0("Histogram of ",i)) +
+    geom_histogram() })
+do.call("grid.arrange", c(plots, ncol=3))
+
+# Dummy and categorical attributes
+catAtt = c("bdb", "cle", "kbc", "og", "gb", "xxp", "rao", "at", "lf", "fq","noyes")
+
+# Contingency table of noyes with some categorical attributes
+for ( i in 1:9 ) {
+  print(catAtt[i])
+  print(table(trainData[, "noyes"], trainData[, catAtt[i]]))
+}
+
+# Contingency table of some categorical attributes with each other
+for ( i in seq(1,7,2) ) {
+  print(paste(catAtt[i]," and ",catAtt[i+1]))
+  print(table(trainData[,i], trainData[, catAtt[i+1]]))
+}
+
+# Pairwise plots of continuous attributes with various categorical attributes colored for training data
+nTrain = nrow(trainData)
+rowsTrain = seq(1, nTrain, 50)
+for ( i in c(1,4,7,11) ) {
+  pairs(sapply(trainData[rowsTrain, contAtt], jitter), col=trainData[rowsTrain, catAtt[i]], pch=16, oma=c(3,3,5,10), cex=0.4, main=paste("Pairs plot colored by", catAtt[i], "for training data"))
+  oldPar <- par(xpd = TRUE)
+  legend("topright", pch=16, col = 1:length(levels(trainData[rowsTrain, catAtt[i]])), legend = c(levels(trainData[rowsTrain, catAtt[i]])))
+  par(oldPar)
+}
+
+# Pairwise plots of continuous attributes with various categorical attributes colored for test data
+nTest = nrow(testData)
+rowsTest = seq(1, nTest, 50)
+for ( i in c(1,4,7) ) {
+  pairs(sapply(testData[rowsTest, contAtt], jitter), col=testData[rowsTest, catAtt[i]], pch=16, oma=c(3,3,5,10), cex=0.4, main = paste("Pairs plot colored by", catAtt[i], "for testing data"))
+  oldPar <- par(xpd = TRUE)
+  legend("topright", pch=16, col = 1:length(levels(testData[rowsTest, catAtt[i]])), legend = c(levels(testData[rowsTest, catAtt[i]])))
+  par(oldPar)
+}
+```
+
+As it is often the case for such contests, the attributes in the dataset are blinded in the sense that no information is available about what those are or what their values mean.  The only information available is that the attribute `noyes` is the outcome to be modeled and the attribute `id` is the unique numerical identifier for each observation.  Some of the remaining attributes are clearly categorical (those that are character valued) and some rather obviously continuous (those with numerical values with large number of unique values).  For several of them it is less clear whether it is best to treat them as continuous or categorical -- e.g. their values are numerical but there are relatively few unique values with many observations taking the same value, so that they arguably could be treated as continuous or categorical.  Please idenify them, reflect on how you prefer to handle them and describe this in your own words.
+
+<span style="color:blue">"gb" is a clear numeric category that should be treated as categorical since it only has integer values of 0 and 1. As seen from the code below, even though some of the other numeric attributes clearly have discrete values, the ones with the fewest are "vuu" with 15 and "mt" with 19. Looking closer at these variables with the histograms and pairwise scatterplots above, I would still consider them as continous variables since there is still enough distribution and information to be gained from their numeric values and there are no clear cutoffs I can see for dividing the variables into categorical variables. If, for example, there is a clear difference when "vuu" has value of 0 vs. values of 1 or more, it might make sense to change it into a categorical variable with a cutoff between 0 and 1. However, the trends seem to be more subtle, and at this time I think it is better to keep the ordering information from the actual numeric values of the data.</span>
+
+```{r uniqueCont}
+# Examine how many unique values for each continous variable
+for (i in 1:ncol(trainData)) {
+  if (class(trainData[,i]) == "numeric") {
+    print(paste0(names(trainData)[i], ": ", length(unique(trainData[,i]))))
+  }
+}
+```
+
+Perform principal components analysis of this data (do you need to scale it prior to that? how would you represent multilevel categorical attributes to be used as inputs for PCA?) and plot observations in the space of the first few principal components indicating levels of some of the categorical attributes of your choosing by the color/shape of the symbol.  Perform univariate assessment of associations between the outcome we will be modeling and each of the attributes (e.g. t-test or logistic regression for continuous attributes, contingency tables/Fisher exact test/$\chi^2$ test for categorical attributes).  Summarize your observations from these assessments: does it appear that there are predictors associated with the outcome `noyes` univariately? Which predictors seem to be more/less relevant?
+
+<span style="color:blue">Since the numerical range of the various attributes are different, with some going from 0 to 1 but others going up to 18, it would be best to scale the data prior to PCA. The "id" column is not being considered because it seems to be a unique identifier for each row but the value does not seem to be related to the outcome.</span>
+
+<span style="color:blue">There are two main ways to represent multilevel categorical attributes as inputs for PCA: as individual dummy variables for each level, or as different shapes/colors as level indicators on plots after PCA of continuous attributes are performed to visually see if there is any clustering by the categorical attributes. I decided to combine the two approaches so that categorical attributes with only 2 levels are presented as dummy variables ("og", "gb",  and "xxp"), while using visualization of some of the remaining categorical attributes along the principal component axes to see if there are any clustering by category.</span>
+
+<span style="color:blue">The attributes with largest loadings for the first two principal components were "ptj" and "vuu". Some plots of observations in the space of the first few principal components with some of the categorical attributes indicated by color are shown below. We see that there is not super clear separation between categories, but, for example, for low values of PC1 there tends to be more no's for "noyes", more fqj's for "cle", and more kc's for "og".</span>
+
+<span style="color:blue">For univariate assessments, logistic regression was performed for continuous attributes, while Fisher's exact tests and $\chi^2$ tests were performed for categorical attributes (to save space, all but one example from each are commented out). From the logistic regressions, all continuous attributes except for "zq" ("vuu", "mt", "zf", "ihj", and "ptj") were significant with extremely low p-values of below 2e-16. For categorical attributes with only 2 levels for which we used Fisher's exact test, we found that "og" was not significant, while "gb" and "xxp" were (p-values below 2.2e-16). For the remaining categorical attributes for which we used $\chi^2$ tests, we found that "at" was less significant (p-value around 0.01) while the others were highly significant (p-values below 2.2e-16).</span>
+
+```{r PCA, fig.height=9}
+# Structure data for PCA (change 2 category variables into dummy variables)
+trainData.PCA = trainData
+trainData.PCA$og.kc = trainData$og == "kc"
+trainData.PCA$gb.1 = trainData$gb == 1
+trainData.PCA$xxp.ptn = trainData$xxp == "ptn"
+trainData.PCA = trainData.PCA[, c(1,3:5,7,10:21)]
+
+# Principal components analysis of continuous attributes (scaled and without outcome)
+PC = prcomp(trainData.PCA[, c(5,8,10:13,15:17)], scal=TRUE)
+
+# Scree plot of PCA results
+# plot(scaledPCs)
+
+# Attributes with largest loadings for the first and second principal components
+# PCA1 = sort(abs(PC$rotation[,1]))[9]; PCA1 # ptj
+# PCA2 = sort(abs(PC$rotation[,2]))[9]; PCA2 # vuu
+
+# Plot of the first few principal components
+# biplot(PC, cex=0.5)
+oldpar <- par(mfrow=c(4,3), xpd = TRUE)
+for (i in c(1,3,9,15)) {
+  trainData.PCA[,i]=factor(trainData.PCA[,i])
+  plot(PC$x[rowsTrain,1], PC$x[rowsTrain,2], xlab="PC1", ylab="PC2", col=trainData.PCA[rowsTrain,i], pch=16, cex=0.5)
+  plot(PC$x[rowsTrain,2], PC$x[rowsTrain,3], xlab="PC2", ylab="PC3",  col=trainData.PCA[rowsTrain,i], pch=16, cex=0.5, main=names(trainData.PCA)[i])
+  plot(PC$x[rowsTrain,1], PC$x[rowsTrain,3], xlab="PC1", ylab="PC3",  col=trainData.PCA[rowsTrain,i],  oma=c(3,3,5,10), pch=16, cex=0.5)
+  legend("topright", pch=16, col = 1:length(levels(trainData.PCA[rowsTrain, i])), legend = c(levels(trainData.PCA[rowsTrain, i])))
+}
+par(oldpar)
+```
+
+```{r uni}
+# Logistic fits of continuous variables
+fit.vuu = glm(noyes~vuu, data=trainData, family=binomial)
+summary(fit.vuu)
+
+# fit.mt = glm(noyes~mt, data=trainData, family=binomial)
+# summary(fit.mt)
+
+# fit.zq = glm(noyes~zq, data=trainData, family=binomial)
+# summary(fit.zq) # Not significant
+
+# fit.zf = glm(noyes~zf, data=trainData, family=binomial)
+# summary(fit.zf)
+
+# fit.ihj = glm(noyes~ihj, data=trainData, family=binomial)
+# summary(fit.ihj)
+
+# fit.ptj = glm(noyes~ptj, data=trainData, family=binomial)
+# summary(fit.ptj)
+
+# Fisher's exact tests of categorical variables with 2 values
+fisher.test(table(trainData[,1], trainData$og)) # Not significant
+# fisher.test(table(trainData[,1], trainData$gb))
+# fisher.test(table(trainData[,1], trainData$xxp))
+
+# Chi squared tests for remaining categorical variables
+chisq.test(table(trainData[,1], trainData$bdb))
+# chisq.test(table(trainData[,1], trainData$cle))
+# chisq.test(table(trainData[,1], trainData$kbc))
+# chisq.test(table(trainData[,1], trainData$rao))
+# chisq.test(table(trainData[,1], trainData$at)) # Less significant
+# chisq.test(table(trainData[,1], trainData$lf))
+# chisq.test(table(trainData[,1], trainData$fq))
+```
+
+
+# Problem 2: logistic regression (20 points)
+
+```{r helperFunction}
+# Helper function from lecture to assess predictions
+assess.prediction = function(truth, predicted, verbose=T) {
+  # Remove missing values
+  predicted = predicted[!is.na(truth)]
+  predicted = predicted[!is.na(predicted)]
+  truth = truth[!is.na(truth)]
+  truth = truth[!is.na(predicted)]
+  
+  # True/false positives/negatives
+  TP = sum(truth=="yes" & predicted=="yes")
+  TN = sum(truth=="no" & predicted=="no")
+  FP = sum(truth=="no" & predicted=="yes")
+  FN = sum(truth=="yes" & predicted=="no")
+  P = TP+FN # total postives in truth data
+  N = TN+FP # total negatives in truth data
+  
+  # All results
+  results = list(correct=sum(truth==predicted), accuracy=signif(sum(truth==predicted)*100/length(truth),3) , error=signif(100-sum(truth==predicted)*100/length(truth),3), TPR=signif(100*TP/P, 3), TNR=signif(100*TN/N, 3), PPV=signif(100*TP/(TP+FP),3), FDR=signif(100*FP/(TP+FP),3))
+  
+  # Don't print information if verbose is False
+  if ( verbose == F ) {
+    return(results)
+  }
+  
+  # Total cases
+  cat("Total cases that are not NA: ", length(truth), "\n", sep ="")
+  
+  # Overall accuracy
+  cat("Correct predictions (accuracy): ", results$correct, " (", results$accuracy, "%)\n", sep ="")
+  cat("Test error=1-accuracy: ", results$error, "%\n", sep ="")
+  
+  # Sensitivity/specificity/etc.
+  cat("TPR (sensitivity)=TP/P: ", results$TPR, "%\n", sep ="")
+  cat("TNR (specificity)=TN/N: ", results$TNR, "%\n", sep ="")
+  cat("PPV (precision)=TP/(TP+FP): ", results$PPV, "%\n", sep ="")
+  cat("FDR (false discovery)=1-PPV: ", results$FDR, "%\n", sep ="")
+}
+```
+
+Develop logistic regression model of the outcome `noyes` as a function of multiple predictors in the model.  Which variables are significantly associated with the outcome?  Test model performance on multiple splits of data into training and test subsets and summarize it in terms of accuracy/error/sensitivity/specificity.
+
+<span style="color:blue">Initially, logistic regression was tested on just the continuous variables (besides "id") and suprisingly even though "vuu" was univariately significant it was the least significant in the case of multiple regression. After backwards stepwise, removal of "zq" was also performed before obstaining a set of significant continuous variables, which had 79.3% training accuracy. We then added in the categorical variables and tried this process again and this time ended up removing "zq" followed by "og", with "vuu" remaining significant. Having more variables resulted in a training accuracy of 86.7%. To test stability of this model, we performed 5-fold crossvalidation and obtained similar results, with medians of around 86.7% accuracy, 13.3% error, 60% sensitivity, and 95% specificity as seen in the boxplots below.</span>
+
+```{r logistic}
+# True values
+true = trainData$noyes
+
+# Fit logistic regression model on continuous variables
+fit.log.cont = glm(noyes~vuu+mt+zq+zf+ihj+ptj, data=trainData, family=binomial)
+# summary(fit.log.cont)
+predicted1 = ifelse(predict(fit.log.cont, newdata=trainData[ , 3:18], type="response") > 0.5, "yes", "no")
+# assess.prediction(true, predicted1) # Assess prediction => 79.3% accuracy
+
+# Logistic regression model with only significant continuous variables (remove vuu then zq using backwards stepwise)
+fit.log.cont2 = glm(noyes~mt+zf+ihj+ptj, data=trainData, family=binomial)
+# summary(fit.log.cont2)
+predicted2 = ifelse(predict(fit.log.cont2, newdata=trainData[ , 3:18], type="response") > 0.5, "yes", "no")
+assess.prediction(true, predicted2)  # Assess prediction => 79.3% accuracy
+
+# Fit logistic regression model on all variables
+fit.log.all = glm(noyes~.-id, data=trainData, family=binomial)
+# summary(fit.log.all)
+predicted3 = ifelse(predict(fit.log.all, newdata=trainData[ , 2:18], type="response") > 0.5, "yes", "no")
+# assess.prediction(true, predicted3) # Assess prediction => 86.7% accuracy
+
+# Logistic regression model with only significant variables (remove zq then og using backwards stepwise)
+fit.log.final = glm(noyes~.-id-zq-og, data=trainData, family=binomial)
+# summary(fit.log.final)
+
+# Compare true and predicted values
+predicted.log.final = ifelse(predict(fit.log.final, newdata=trainData[ , 2:18], type="response") > 0.5, "yes", "no")
+table(true, predicted.log.final)
+
+# Accuracy, error rate, sensitivity, and specificity of final model
+assess.prediction(true, predicted.log.final) # Assess prediction => 86.7% accuracy, 60.6% TPR, and 95.2% TNR
+
+# Test model on train/test splits
+# k-fold crossvalidation
+N.xval = 5
+N.iter = 3
+data=trainData
+results = NULL
+
+for ( iter in 1:N.iter ) {
+  grps = sample( (1:nrow(data)) %% N.xval+1 ) # Randomly assign groups
+  for ( i in 1:N.xval ) {
+    data.test = data[grps == i,] # Set group i as test
+    data.train = data[grps != i,] # Set the rest as train
+    
+    # Expected results from train/test predictions
+    train.true = data.train$noyes
+    test.true = data.test$noyes
+    
+    # Results for fit
+    fit = glm(noyes~.-id-zq-og, data=data.train, family=binomial)
+    train.predicted = ifelse(predict(fit, newdata=data.train[ , 2:18], type="response") > 0.5, "yes", "no")
+    test.predicted = ifelse(predict(fit, newdata=data.test[ , 2:18], type="response") > 0.5, "yes", "no")
+    
+    # Calculate and store accuracy/error/sensitivity/specificity
+    test.results = assess.prediction(test.true, test.predicted, verbose=F)
+    results = rbind(results, data.frame(accuracy = test.results$accuracy, error = test.results$error,
+                    sensitivity = test.results$TPR, specificity = test.results$TNR, model="Logistic"))
+  }
+}
+
+# Plot results from cross-validation
+plot1 = ggplot(results, aes(y=accuracy)) +  geom_boxplot() + ylab("Accuracy (%)") +
+  ggtitle("Accuracy of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot2 = ggplot(results, aes(y=error)) +  geom_boxplot() + ylab("Error (%)") +
+  ggtitle("Error of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot3 = ggplot(results, aes(y=sensitivity)) +  geom_boxplot() + ylab("Sensitivity (%)") +
+  ggtitle("Sensitivity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot4 = ggplot(results, aes(y=specificity)) +  geom_boxplot() + ylab("Specificity (%)") +
+  ggtitle("Specificity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+grid.arrange(plot1, plot2, plot3, plot4, nrow=2)
+```
+
+
+## Extra points problem: interaction terms (5 extra points)
+
+Assess the impact/significance of pairwise interaction terms for all pairwise combinations of covariates used in the model and report the top ten that most significantly improve model fit.
+
+# Problem 3: linear discriminant analysis (15 points)
+
+Fit linear discriminant analysis model of the outcome `noyes` as a function of the rest of covariates in the dataset.  Feel free to decide whether you want to use all of them or a subset of those.  Test resulting model performance on multiple splits of the data into training and test subsets, summarize it in terms of accuracy/error/sensitivity/specificity and compare them to those obtained for logistic regression.
+
+<span style="color:blue">I decided to fit the LDA classifier on the same subset of variables as was found for logistic regression (all variables except for "id", "zq", and "og"), and it was found that there was no improvement in training accuracy with or without "zq" and "og". Cross-validation was performed on multiple iterations of training and test subsets, and the accuracy/error/sensitivity/specificity are shown in boxplots below. Overall, the error rate for LDA was quite similar but slightly worse than for the logistic regression above. It tended to have a slightly higher specificity, so there was a corresponding higher decline in sensitivity. From the graphs, we see that LDA has around 86.2% accuracy, 13.8% error, 58% sensitivity, and 95% specificity as seen in the boxplots below.</span>
+
+```{r LDA}
+# Fit LDA classifier on all variables
+fit.LDA.all = lda(noyes~.-id, data=trainData)
+predicted4 = ifelse(predict(fit.LDA.all, newdata=trainData[ , 2:18])$posterior[,2] > 0.5, "yes", "no")
+# assess.prediction(true, predicted4) # Assess prediction => 86.4% accuracy
+
+# LDA classifier with only significant variables as determined from logisitic regression (remove zq and og)
+fit.LDA.final = lda(noyes~.-id-zq-og, data=trainData)
+predicted.LDA.final = ifelse(predict(fit.LDA.final, newdata=trainData[ , 2:18])$posterior[,2] > 0.5, "yes", "no")
+table(true, predicted.LDA.final)
+
+# Accuracy, error rate, sensitivity, and specificity of final model
+assess.prediction(true, predicted.LDA.final) # Assess prediction => 86.4% accuracy, 59% TPR, and 95.3% TNR
+
+# Test model on train/test splits
+# k-fold crossvalidation
+for ( iter in 1:N.iter ) {
+  grps = sample( (1:nrow(data)) %% N.xval+1 ) # Randomly assign groups
+  for ( i in 1:N.xval ) {
+    data.test = data[grps == i,] # Set group i as test
+    data.train = data[grps != i,] # Set the rest as train
+    
+    # Expected results from train/test predictions
+    train.true = data.train$noyes
+    test.true = data.test$noyes
+    
+    # Results for fit
+    fit = lda(noyes~.-id-zq-og, data=data.train)
+    train.predicted = ifelse(predict(fit, newdata=data.train[ , 2:18])$posterior[,2] > 0.5, "yes", "no")
+    test.predicted = ifelse(predict(fit, newdata=data.test[ , 2:18])$posterior[,2] > 0.5, "yes", "no")
+    
+    # Calculate and store accuracy/error/sensitivity/specificity
+    test.results = assess.prediction(test.true, test.predicted, verbose=F)
+    results = rbind(results, data.frame(accuracy = test.results$accuracy, error = test.results$error,
+                    sensitivity = test.results$TPR, specificity = test.results$TNR, model="LDA"))
+  }
+}
+
+# Plot results from cross-validation
+plot1 = ggplot(results, aes(y=accuracy, col=model)) +  geom_boxplot() + ylab("Accuracy (%)") +
+  ggtitle("Accuracy of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot2 = ggplot(results, aes(y=error, col=model)) +  geom_boxplot() + ylab("Error (%)") +
+  ggtitle("Error of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot3 = ggplot(results, aes(y=sensitivity, col=model)) +  geom_boxplot() + ylab("Sensitivity (%)") +
+  ggtitle("Sensitivity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot4 = ggplot(results, aes(y=specificity, col=model)) +  geom_boxplot() + ylab("Specificity (%)") +
+  ggtitle("Specificity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+grid.arrange(plot1, plot2, plot3, plot4, nrow=2)
+```
+
+
+## Extra points problem: quadratic discriminant analysis (5 extra points)
+
+In our experience attempting to fit quadratic discriminant analysis model of the categorical outcome `noyes` on this data results in a rank deficiency related error. Determine on how to correct this error and report resulting model training and test error/accuracy/etc. and how it compares to LDA and logistic regression above. 
+
+<span style="color:blue">The error can be corrected if some variables are removed to correct for some variables potentially being linear combinations of others. I used GVIF^(1/(2*Df)) from the logistic fit as a guideline and added back variables one by one starting with all the continuous variables then the remaining categorical variables until just before errors with rank deficiency occured. At this point, the variables that were removed were "kbc" and "og", which resulted in a training accuracy of 83.7%. Unlike previously with the banknote data, QDA performed worse than LDA. Cross-validation was performed on multiple iterations of training and test subsets, and the accuracy/error/sensitivity/specificity are shown in boxplots below, with error dropping to 83%, error going up to 17%, sensivity down to 47%, and specificity down to around 94%.</span>
+
+```{r QDA}
+# Examine VIFs from logistic fit
+vif(fit.log.all)
+
+# QDA classifier with variables from LDA (remove zq and og), and also kbc removed since it has pretty high GVIF and the highest Df
+fit.QDA.final = qda(noyes~.-id-og-kbc, data=trainData)
+predicted5 = ifelse(predict(fit.QDA.final, newdata=trainData[ , -1])$posterior[,2] > 0.5, "yes", "no")
+# assess.prediction(true, predicted5) # Assess prediction => 82.7% accuracy, 47.5% sensitivity, 94.2% specificity
+
+# Test model on train/test splits
+# k-fold crossvalidation
+for ( iter in 1:N.iter ) {
+  grps = sample( (1:nrow(data)) %% N.xval+1 ) # Randomly assign groups
+  for ( i in 1:N.xval ) {
+    data.test = data[grps == i,] # Set group i as test
+    data.train = data[grps != i,] # Set the rest as train
+    
+    # Expected results from train/test predictions
+    train.true = data.train$noyes
+    test.true = data.test$noyes
+    
+    # Results for fit
+    fit = qda(noyes~.-id-og-kbc, data=data.train)
+    train.predicted = ifelse(predict(fit, newdata=data.train[ , 2:18])$posterior[,2] > 0.5, "yes", "no")
+    test.predicted = ifelse(predict(fit, newdata=data.test[ , 2:18])$posterior[,2] > 0.5, "yes", "no")
+    
+    # Calculate and store accuracy/error/sensitivity/specificity
+    test.results = assess.prediction(test.true, test.predicted, verbose=F)
+    results = rbind(results, data.frame(accuracy = test.results$accuracy, error = test.results$error,
+                    sensitivity = test.results$TPR, specificity = test.results$TNR, model="QDA"))
+  }
+}
+
+# Plot results from cross-validation
+plot1 = ggplot(results, aes(y=accuracy, col=model)) +  geom_boxplot() + ylab("Accuracy (%)") +
+  ggtitle("Accuracy of QDA") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot2 = ggplot(results, aes(y=error, col=model)) +  geom_boxplot() + ylab("Error (%)") +
+  ggtitle("Error of QDA") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot3 = ggplot(results, aes(y=sensitivity, col=model)) +  geom_boxplot() + ylab("Sensitivity (%)") +
+  ggtitle("Sensitivity of QDA") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot4 = ggplot(results, aes(y=specificity, col=model)) +  geom_boxplot() + ylab("Specificity (%)") +
+  ggtitle("Specificity of QDA") + theme(plot.title = element_text(size=12, hjust = 0.5))
+grid.arrange(plot1, plot2, plot3, plot4, nrow=2)
+```
+
+
+# Problem 4: random forest (15 points)
+
+Develop random forest model of outcome `noyes`. Present variable importance plots and comment on relative importance of different attributes in the model.  Did attributes showing up as more important in random forest model also appear as significantly associated with the outcome by logistic regression?  Test model performance on multiple splits of data into training and test subsets, compare test and out-of-bag error estimates, summarize model performance in terms of accuracy/error/sensitivity/specificity and compare to the performance of logistic regression and LDA models above.
+
+<span style="color:blue">From the variable importance plot after fitting random forest to all the variables (besides "id"), we find that "og" had the lowest value for MeanDecreaseGini, so we removed the variable from the fit. It is interesting that even though we previously got rid of "zq" for logistic regression because it was not significant, in the RF model it is quite important and ranked fourth. Otherwise, attributes showing up as more important overlap with logistic regression. Model performance was tested on multiple splits of data using 5-fold crossvalidation (choosing from a subset of 1/10 of the data to save computation time). Based on the boxplots below, we find that random forest has comparable accuracy/error to the logistic regression and LDA models above (maybe around 0.2% better based on median), but improves on the sensitivity by around 5% even though the specificity dropped by around 1%. The larger distribution of errors is likely from subsetting the data instead of using the whole dataset, but we see it has the potential to achieve accuracies as high as 90%, which would be better than the other models. The out-of-bag error estimates for the fit against all the variables vs. the fit with "id" and "og" removed were 11.53% vs. 11.61%. This is in line with the error rates we get from crossvalidation, which was around 13%.</span>
+
+
+```{r RF}
+# RF classifier with all variables (except id)
+x.all = trainData[, -c(1,2)]; y=trainData$noyes
+rf.all <- randomForest(x.all, y)
+# predicted.rf.all = predict(rf.all, newdata=x.all)
+# assess.prediction(true, predicted.rf.all) # Assess prediction => 100% accuracy
+
+# Variable importance plot of RF model
+varImpPlot(rf.all, type=2)
+
+# Out-of-bag error estimate
+# rf.all # => OOB error of 11.53%
+
+# RF classifier with reduced variables as determined from importance plot (remove id and og)
+x.reduced = trainData[, -c(1,2,6)]
+rf.reduced <- randomForest(x.reduced, y)
+predicted.rf.reduced = predict(rf.reduced, newdata=x.reduced)
+table(true, predicted.rf.reduced)
+
+# Variable importance plot of updated RF model
+varImpPlot(rf.reduced, type=2)
+
+# Out-of-bag error estimate
+rf.reduced # => OOB error of 11.61%
+
+# Accuracy, error rate, sensitivity, and specificity of model
+assess.prediction(true, predicted.rf.reduced) # Assess prediction => 100% accuracy
+
+# Test model on train/test splits
+# k-fold crossvalidation
+N.xval = 5
+N.iter = 5
+for ( iter in 1:N.iter ) {
+  subset = sample( (1:nrow(data)) %% 10 ) # Randomly assign subset with 1/10 of data for faster runtime
+  data.subset = data[subset == 5,]
+  grps = sample( (1:nrow(data.subset)) %% N.xval+1 ) # Randomly assign groups
+  for ( i in 1:N.xval ) {
+    data.test = data.subset[grps == i,] # Set group i as test
+    data.train = data.subset[grps != i,] # Set the rest as train
+    
+    # Expected results from train/test predictions
+    train.true = data.train$noyes
+    test.true = data.test$noyes
+    
+    # Results for fit
+    fit = randomForest(data.train[, -c(1,2,6)], train.true)
+    train.predicted = predict(fit, newdata=data.train[, -c(1,2,6)])
+    test.predicted = predict(fit, newdata=data.test[, -c(1,2,6)])
+    
+    # Calculate and store accuracy/error/sensitivity/specificity
+    test.results = assess.prediction(test.true, test.predicted, verbose=F)
+    results = rbind(results, data.frame(accuracy = test.results$accuracy, error = test.results$error,
+                    sensitivity = test.results$TPR, specificity = test.results$TNR, model="RF"))
+  }
+}
+
+# Plot results from cross-validation
+plot1 = ggplot(results, aes(y=accuracy, col=model)) +  geom_boxplot() + ylab("Accuracy (%)") +
+  ggtitle("Accuracy of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot2 = ggplot(results, aes(y=error, col=model)) +  geom_boxplot() + ylab("Error (%)") +
+  ggtitle("Error of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot3 = ggplot(results, aes(y=sensitivity, col=model)) +  geom_boxplot() + ylab("Sensitivity (%)") +
+  ggtitle("Sensitivity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot4 = ggplot(results, aes(y=specificity, col=model)) +  geom_boxplot() + ylab("Specificity (%)") +
+  ggtitle("Specificity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+grid.arrange(plot1, plot2, plot3, plot4, nrow=2)
+```
+
+
+# Problem 5: SVM (20 points)
+
+Develop SVM model of categorical outcome `noyes` deciding on the choice of kernel, cost, etc. that appear to yield better performance.  Test model performance on multiple splits of data into training and test subsets, summarize model performance in terms of accuracy/error/sensitivity/specificity and compare to the performance of the rest of the models developed above (logistic regression, LDA, random forest).
+
+<span style="color:blue">A radial kernel was used for SVM classification. An initial test with cost and gamma values of 1 resulted in a training accuracy of around 98.2%. However, when we tuned the SVM fit using a random subset of data (1/20 the original dataset), we found that higher costs (around 10) and lower gammas (around 0.02) resulted in lower errors based on the tune function. 5-fold crossvalidation was performed with these tuned parameters (choosing from a subset of 1/10 of the data to save computation time). Based on the boxplots below, we find that SVM with a radial kernel performs similarly to the random forest model, with some trends shared with the logistic/LDA models as well. There was quite a bit of variation between runs, which is probably due to just using a subset of the data to get us in the general ballpark of the acutal results and save on computation time. SVM has pretty much identical accuracy/error compared to random forest and is also comparable to LDA and logistic models. There was a boost in sensitivity (falling between LDA/logistic and random forest), at least for the median value, but there is a lot of variation. Due to the uncertainly of the broad boxplot distributions, there does not seem to be a clear winner.</span>
+
+```{r radialSVM}
+# Following commented out for faster runtime
+# Initial test: fit SVM model without id and og, as in random forest, using cost and gamma of 1
+# svmRes <- svm(noyes~.-id-og, data=trainData, kernel="radial", scale=T, cost=1, gamma=1)
+# predicted6 = predict(svmRes, newdata=trainData[, -1])
+# assess.prediction(true, predicted6) # Assess prediction => 98.2% accuracy
+
+# Tuning cost and gamma
+# Split data for faster run-time
+# subset = sample( (1:nrow(trainData)) %% 20 ) # Randomly assign subset with 1/20 of data for faster runtime
+# data.subset = trainData[subset == 5,]
+# fit.svm.final = tune(svm, noyes~.-id-og, data=data.subset, kernel="radial", scale=T,
+#                     ranges=list(cost=c(1,5,10), gamma=c(0.02,0.05,0.1)))
+# fit.svm.final # Optimized for cost=10 and gamma=0.02
+# predicted.svm.final = predict(fit.svm.final$best.model, newdata=trainData[ , -1])
+
+# Accuracy, error rate, sensitivity, and specificity of model
+# assess.prediction(true, predicted.svm.final) # Assess prediction => 86.4% accuracy
+
+# Test model on train/test splits
+# k-fold crossvalidation
+N.xval = 5
+N.iter = 5
+
+for ( iter in 1:N.iter ) {
+  subset = sample( (1:nrow(trainData)) %% 10 ) # Randomly assign subset with 1/10 of data for faster runtime
+  data.subset = trainData[subset == 5,]
+  grps = sample( (1:nrow(data.subset)) %% N.xval+1 ) # Randomly assign groups
+  for ( i in 1:N.xval ) {
+    data.test = data.subset[grps == i,] # Set group i as test
+    data.train = data.subset[grps != i,] # Set the rest as train
+    
+    # Expected results from train/test predictions
+    train.true = data.train$noyes
+    test.true = data.test$noyes
+    
+    # Results for fit
+    fit = svm(noyes~.-id-og, data=data.train, kernel="radial", scale=T, cost=10, gamma=0.02)
+    train.predicted = predict(fit, newdata=data.train[, -1])
+    test.predicted = predict(fit, newdata=data.test[, -1])
+
+    # Calculate and store accuracy/error/sensitivity/specificity
+    test.results = assess.prediction(test.true, test.predicted, verbose=F)
+    results = rbind(results, data.frame(accuracy = test.results$accuracy, error = test.results$error,
+                    sensitivity = test.results$TPR, specificity = test.results$TNR, model="SVM"))
+  }
+}
+
+# Plot results from cross-validation
+plot1 = ggplot(results, aes(y=accuracy, col=model)) +  geom_boxplot() + ylab("Accuracy (%)") +
+  ggtitle("Accuracy of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot2 = ggplot(results, aes(y=error, col=model)) +  geom_boxplot() + ylab("Error (%)") +
+  ggtitle("Error of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot3 = ggplot(results, aes(y=sensitivity, col=model)) +  geom_boxplot() + ylab("Sensitivity (%)") +
+  ggtitle("Sensitivity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot4 = ggplot(results, aes(y=specificity, col=model)) +  geom_boxplot() + ylab("Specificity (%)") +
+  ggtitle("Specificity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+grid.arrange(plot1, plot2, plot3, plot4, nrow=2)
+```
+
+
+# Problem 6: predictions for test dataset  (10 points)
+
+## Problem 6a: compare logistic regression, LDA, random forest and SVM model performance (3 points)
+
+Compare performance of the models developed above (logistic regression, LDA, random forest, SVM) in terms of their accuracy, error and sensitivity/specificity.  Comment on differences and similarities between them.
+
+<span style="color:blue">Overall, these models all fell within the same ballpark in terms of being at most around 2 to 5% away from each other. Logistic seemed to have the most consistently high accuracy, while its sensitivity and specificity were more middle of the pack. LDA had slight decrease in accuracy/increase in error (less than around 0.5%), lost ground on sensitivity, but gained it in specificity. You can decide on which model is more preferable depending on whether your goal is to achieve better sensivity or better specificity. As mentioned before, random forest and SVM have more of a distribution because they are more computationally intensive so a smaller subset was chosen for testing. Even though their median accuracies are similar (sometimes higher, sometimes lower depending on the run) than LDA/logistic fits, there is a greater oppportunity for them to achieve accuracies as high as 90%. Compared to LDA and logistic fits, random forest and SVM tend to have higher sensivities, with some loss in some specificity as a consequence.</span>
+
+## Problem 6b: make predictions for the **test** dataset (3 points)
+
+Decide on the model that performs the best and use it to make predictions for the **test** dataset.  This is the dataset that is provided separately from training data without the outcome `noyes` that we are modeling here.  Upload resulting predictions in comma-separated values (CSV) format into the Canvas website.  Please check sample files with test dataset predictions for the expected format of the *.csv file with predictions: your submission must be in precisely the same format -- two and only two columns, first column - ids of the test observations ("id" column in test dataset), second - predictions as yes/no calls (not 0/1, 1/2, true/false, etc.).  The name of the second column of predictions is what will be used in leaderboard as its name.
+
+<span style="color:blue">I decided that the random forest model with "id" and "og" removed was the best due to its heightened sensivitiy, which is the metric that needs the most improvement that the others were weaker on. Using the fit from before in Problem 4, I obtained some dataset predictions for the test data and saved them to a csv file.</span>
+
+```{r testPredict}
+# Decided to proceed with random forest as the final model (specifically the reduced model with id and og removed)
+test.predictions = predict(rf.reduced, newdata=testData[,-c(1,5)])
+testPredictions = cbind(data.frame(id=testData$id, randomGuess=test.predictions))
+
+write.csv(testPredictions, file = "predictions-aw.csv", row.names=F)
+```
+
+
+## Problem 6c: get better than coin flip by 10% (4 points)
+
+This is not really a problem *per se* but rather a criterion that we will go by when assessing quality of your predictions for the test dataset.  You get these four points if your predictions for **test** dataset are better than those obtained from a fair coin flip (already shown in leaderboard and as examples of the file format for predictions upload) by at least 10% on **all** four metrics shown in the leaderboard (accuracy, sensitivity, specificity and precision).  But then predictions by the coin flip should not be very difficult to improve upon.  
+
+# Extra 10 points: neural network model
+
+
