@@ -354,13 +354,13 @@ for ( iter in 1:N.iter ) {
 
 # Plot results from cross-validation
 plot1 = ggplot(results, aes(y=accuracy, col=model)) +  geom_boxplot() + ylab("Accuracy (%)") +
-  ggtitle("Accuracy of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Accuracy of LDA") + theme(plot.title = element_text(size=12, hjust = 0.5))
 plot2 = ggplot(results, aes(y=error, col=model)) +  geom_boxplot() + ylab("Error (%)") +
-  ggtitle("Error of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Error of LDA") + theme(plot.title = element_text(size=12, hjust = 0.5))
 plot3 = ggplot(results, aes(y=sensitivity, col=model)) +  geom_boxplot() + ylab("Sensitivity (%)") +
-  ggtitle("Sensitivity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Sensitivity of LDA") + theme(plot.title = element_text(size=12, hjust = 0.5))
 plot4 = ggplot(results, aes(y=specificity, col=model)) +  geom_boxplot() + ylab("Specificity (%)") +
-  ggtitle("Specificity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Specificity of LDA") + theme(plot.title = element_text(size=12, hjust = 0.5))
 grid.arrange(plot1, plot2, plot3, plot4, nrow=2)
 ```
 
@@ -482,13 +482,13 @@ for ( iter in 1:N.iter ) {
 
 # Plot results from cross-validation
 plot1 = ggplot(results, aes(y=accuracy, col=model)) +  geom_boxplot() + ylab("Accuracy (%)") +
-  ggtitle("Accuracy of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Accuracy of Random Forest") + theme(plot.title = element_text(size=12, hjust = 0.5))
 plot2 = ggplot(results, aes(y=error, col=model)) +  geom_boxplot() + ylab("Error (%)") +
-  ggtitle("Error of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Error of Random Forest") + theme(plot.title = element_text(size=12, hjust = 0.5))
 plot3 = ggplot(results, aes(y=sensitivity, col=model)) +  geom_boxplot() + ylab("Sensitivity (%)") +
-  ggtitle("Sensitivity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Sensitivity of Random Forest") + theme(plot.title = element_text(size=12, hjust = 0.5))
 plot4 = ggplot(results, aes(y=specificity, col=model)) +  geom_boxplot() + ylab("Specificity (%)") +
-  ggtitle("Specificity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Specificity of Random Forest") + theme(plot.title = element_text(size=12, hjust = 0.5))
 grid.arrange(plot1, plot2, plot3, plot4, nrow=2)
 ```
 
@@ -549,13 +549,13 @@ for ( iter in 1:N.iter ) {
 
 # Plot results from cross-validation
 plot1 = ggplot(results, aes(y=accuracy, col=model)) +  geom_boxplot() + ylab("Accuracy (%)") +
-  ggtitle("Accuracy of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Accuracy of SVM") + theme(plot.title = element_text(size=12, hjust = 0.5))
 plot2 = ggplot(results, aes(y=error, col=model)) +  geom_boxplot() + ylab("Error (%)") +
-  ggtitle("Error of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Error of SVM") + theme(plot.title = element_text(size=12, hjust = 0.5))
 plot3 = ggplot(results, aes(y=sensitivity, col=model)) +  geom_boxplot() + ylab("Sensitivity (%)") +
-  ggtitle("Sensitivity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Sensitivity of SVM") + theme(plot.title = element_text(size=12, hjust = 0.5))
 plot4 = ggplot(results, aes(y=specificity, col=model)) +  geom_boxplot() + ylab("Specificity (%)") +
-  ggtitle("Specificity of Logistic Regression") + theme(plot.title = element_text(size=12, hjust = 0.5))
+  ggtitle("Specificity of SVM") + theme(plot.title = element_text(size=12, hjust = 0.5))
 grid.arrange(plot1, plot2, plot3, plot4, nrow=2)
 ```
 
