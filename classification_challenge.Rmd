@@ -14,6 +14,7 @@ library(randomForest)
 library(MASS)
 library(car)
 library(e1071)
+library(neuralnet)
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -589,4 +590,55 @@ This is not really a problem *per se* but rather a criterion that we will go by 
 
 # Extra 10 points: neural network model
 
+Use `neuralnet` to model the outcome in banknote authentication dataset that we used in previous weeks and compare its test error at several sizes of hidden layer to that observed for SVM and KNN approaches.
 
+```{r neuralNet}
+# Fit neural networks with 1 or 2 nodes in a single hidden layer
+for ( j.Nodes in 1:2 ) {
+  # Test model on train/test splits
+  # k-fold crossvalidation
+  N.xval = 3
+  N.iter = 3
+  
+  set.seed(123321)
+  for ( iter in 1:N.iter ) {
+    subset = sample( (1:nrow(trainData)) %% 20 ) # Randomly assign subset with 1/2- of data for faster runtime
+    data.subset = trainData[subset == 5,]
+    grps = sample( (1:nrow(data.subset)) %% N.xval+1 ) # Randomly assign groups
+    for ( i in 1:N.xval ) {
+      data.test = data.subset[grps == i,] # Set group i as test
+      data.train = data.subset[grps != i,] # Set the rest as train
+      
+      # Expected results from train/test predictions
+      train.true = data.train$noyes
+      test.true = data.test$noyes
+      
+      # Change no/yes to 0/1
+      data.train$noyes = as.integer(ifelse(data.train$noyes=="yes", 1, 0))
+      
+      # Results for fit of neural network on all continuous variables
+      fit = neuralnet(noyes~vuu+mt+zq+zf+ihj+ptj, data=data.train, hidden=j.Nodes, linear.output=TRUE, err.fct="sse", stepmax=5e5)
+      train.predicted = factor(ifelse(fit$net.result[[1]]>0.5, "yes", "no")) 
+      test.predicted = compute(fit, data.test[,-1])
+      test.predicted = factor(ifelse(test.predicted$net.result>0.5, "yes", "no"), levels=c("no", "yes"))
+      
+      # Calculate and store accuracy/error/sensitivity/specificity
+      test.results = assess.prediction(test.true, test.predicted, verbose=F)
+      results = rbind(results, data.frame(accuracy = test.results$accuracy, error = test.results$error,
+                                          sensitivity = test.results$TPR, specificity = test.results$TNR,
+                                          model=paste("NNet",j.Nodes)))
+    }
+  }
+}
+  
+# Plot results from cross-validation
+plot1 = ggplot(results, aes(y=accuracy, col=model)) +  geom_boxplot() + ylab("Accuracy (%)") +
+  ggtitle("Accuracy of Neural Net") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot2 = ggplot(results, aes(y=error, col=model)) +  geom_boxplot() + ylab("Error (%)") +
+  ggtitle("Error of Neural Net") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot3 = ggplot(results, aes(y=sensitivity, col=model)) +  geom_boxplot() + ylab("Sensitivity (%)") +
+  ggtitle("Sensitivity of Neural Net") + theme(plot.title = element_text(size=12, hjust = 0.5))
+plot4 = ggplot(results, aes(y=specificity, col=model)) +  geom_boxplot() + ylab("Specificity (%)") +
+  ggtitle("Specificity of Neural Net") + theme(plot.title = element_text(size=12, hjust = 0.5))
+grid.arrange(plot1, plot2, plot3, plot4, nrow=2)
+```
